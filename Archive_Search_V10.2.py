@@ -1692,7 +1692,7 @@ class ArchiveSearchApp:
             "Select folders, enter search terms, then click Search.\n"
             "Use quotes for exact phrases, e.g. \"Sigma 5E\".\n"
             "Any word = any term | All words = every term.\n"
-            "Click a result path to open the file read-only where supported."
+            "Click a result path to open the file 'read-only' where supported."
         )
         ttk.Label(container, text=help_text, justify="left").pack(anchor="w", pady=(10, 4))
 
