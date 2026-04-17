@@ -1590,7 +1590,6 @@ class ArchiveSearchApp:
         self.search_var = tk.StringVar()
         self.match_mode_var = tk.StringVar(value="any")
         self.status_var = tk.StringVar(value="Ready.")
-        self.summary_var = tk.StringVar(value="No search results yet.")
 
         self._build_ui()
         self._update_folder_states()
@@ -1700,7 +1699,6 @@ class ArchiveSearchApp:
         ttk.Label(container, text=help_text, justify="left").pack(anchor="w", pady=(10, 4))
 
         ttk.Label(container, textvariable=self.status_var).pack(anchor="w", pady=(0, 4))
-        ttk.Label(container, textvariable=self.summary_var, font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(0, 8))
 
         # The left pane shows grouped results; the right pane shows details for
         # whichever result is currently selected.
@@ -2015,7 +2013,6 @@ class ArchiveSearchApp:
         """
         self._clear_results_tree()
         self._clear_details()
-        self.summary_var.set("No search results yet.")
         self.status_var.set("Ready.")
 
     def _get_selected_search_roots(self) -> Optional[Tuple[SearchRoot, ...]]:
@@ -2116,9 +2113,6 @@ class ArchiveSearchApp:
         self.current_highlight_terms = build_highlight_terms(search_terms)
 
         self.clear_output()
-        self.summary_var.set(
-            f"Searching {self._get_selected_file_type_label()} for {search_input!r} ({self.match_mode_var.get()} mode)..."
-        )
         self.status_var.set("Searching...")
         self._set_search_running_ui(True)
 
@@ -2214,13 +2208,11 @@ class ArchiveSearchApp:
                     f"Time: {elapsed_seconds:.2f} seconds."
                 )
 
-            self.summary_var.set(final_message)
             self.status_var.set(final_message)
             self._set_search_running_ui(False)
 
         if fatal_payload is not None:
             self.status_var.set("Search failed.")
-            self.summary_var.set("Search failed.")
             self._set_search_running_ui(False)
             messagebox.showerror("Search failed", fatal_payload)
 
