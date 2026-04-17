@@ -1439,6 +1439,7 @@ class SearchRunner:
         """
         Perform discovery, cache refresh, and cached searching on a worker thread.
         """
+        started_at = time.perf_counter()
         files_scanned = 0
         matches_found = 0
 
@@ -1451,7 +1452,12 @@ class SearchRunner:
             # actual content search begins.
             for root in roots:
                 if self.cancel_event.is_set():
-                    self.queue.put(("finished", {"files_scanned": 0, "matches_found": 0, "cancelled": True}))
+                    self.queue.put(("finished", {
+                        "files_scanned": 0,
+                        "matches_found": 0,
+                        "cancelled": True,
+                        "elapsed_seconds": time.perf_counter() - started_at,
+                    }))
                     return
 
                 previous_cache = self.cache_manager.load_cache(root.path)
@@ -1480,7 +1486,12 @@ class SearchRunner:
                 cache_groups.append((root, cache_document))
 
             if total_files == 0:
-                self.queue.put(("finished", {"files_scanned": 0, "matches_found": 0, "cancelled": False}))
+                self.queue.put(("finished", {
+                    "files_scanned": 0,
+                    "matches_found": 0,
+                    "cancelled": False,
+                    "elapsed_seconds": time.perf_counter() - started_at,
+                }))
                 return
 
             item_buffer: List[Dict[str, object]] = []
@@ -1521,10 +1532,16 @@ class SearchRunner:
                 "files_scanned": files_scanned,
                 "matches_found": matches_found,
                 "cancelled": self.cancel_event.is_set(),
+                "elapsed_seconds": time.perf_counter() - started_at,
             }))
         except Exception as exc:
             if self.cancel_event.is_set():
-                self.queue.put(("finished", {"files_scanned": files_scanned, "matches_found": matches_found, "cancelled": True}))
+                self.queue.put(("finished", {
+                    "files_scanned": files_scanned,
+                    "matches_found": matches_found,
+                    "cancelled": True,
+                    "elapsed_seconds": time.perf_counter() - started_at,
+                }))
             else:
                 self.queue.put(("fatal", str(exc)))
 
@@ -2119,16 +2136,19 @@ class ArchiveSearchApp:
 
             scanned_label = pluralize(files_scanned, "file")
             result_label = pluralize(matches_found, "result")
+            elapsed_seconds = finished_payload.get("elapsed_seconds", 0.0)
 
             if cancelled:
                 final_message = (
                     f"Cancelled. Scanned {files_scanned} {scanned_label}. "
                     f"Found {matches_found} matching {result_label} before cancellation."
+                    f"Time: {elapsed_seconds:.2f} seconds."
                 )
             else:
                 final_message = (
                     f"Finished. Scanned {files_scanned} {scanned_label}. "
                     f"Found {matches_found} matching {result_label}."
+                    f"Time: {elapsed_seconds:.2f} seconds."
                 )
 
             self.write_line("=" * 100)
