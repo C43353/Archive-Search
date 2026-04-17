@@ -1693,8 +1693,11 @@ class ArchiveSearchApp:
         self.clear_button.pack(side="left", padx=(8, 0))
 
         help_text = (
+            "Select folders, enter search terms, then click Search.\n"
+            "Use quotes for exact phrases, e.g. \"Sigma 5E\".\n"
+            "Any word = any term | All words = every term.\n"
             "Results are grouped one row per file. Select a result on the left to inspect the matching snippets on the right.\n"
-            "Use quotes for exact phrases, e.g. \"Sigma 5E\". Double-click a result or use Open Selected to open the file read-only where supported."
+            "Double-click a result or click 'Open Selected' to open the file 'read-only' where supported."
         )
         ttk.Label(container, text=help_text, justify="left").pack(anchor="w", pady=(10, 4))
 
