@@ -1434,6 +1434,7 @@ class SearchRunner:
         """
         Perform discovery, cache refresh, and cached searching on a worker thread.
         """
+        started_at = time.perf_counter()
         files_scanned = 0
         matched_files = 0
         total_matches = 0
@@ -1452,6 +1453,7 @@ class SearchRunner:
                         "matched_files": 0,
                         "total_matches": 0,
                         "cancelled": True,
+                        "elapsed_seconds": time.perf_counter() - started_at,
                     }))
                     return
 
@@ -1486,6 +1488,7 @@ class SearchRunner:
                     "matched_files": 0,
                     "total_matches": 0,
                     "cancelled": False,
+                    "elapsed_seconds": time.perf_counter() - started_at,
                 }))
                 return
 
@@ -1533,6 +1536,7 @@ class SearchRunner:
                 "matched_files": matched_files,
                 "total_matches": total_matches,
                 "cancelled": self.cancel_event.is_set(),
+                "elapsed_seconds": time.perf_counter() - started_at,
             }))
         except Exception as exc:
             if self.cancel_event.is_set():
@@ -1541,6 +1545,7 @@ class SearchRunner:
                     "matched_files": matched_files,
                     "total_matches": total_matches,
                     "cancelled": True,
+                    "elapsed_seconds": time.perf_counter() - started_at,
                 }))
             else:
                 self.queue.put(("fatal", str(exc)))
@@ -2194,16 +2199,19 @@ class ArchiveSearchApp:
             matched_files = int(finished_payload["matched_files"])
             total_matches = int(finished_payload["total_matches"])
             cancelled = bool(finished_payload["cancelled"])
+            elapsed_seconds = finished_payload.get("elapsed_seconds", 0.0)
 
             if cancelled:
                 final_message = (
                     f"Cancelled. Scanned {files_scanned} {pluralize(files_scanned, 'file')}. "
                     f"Found {matched_files} matching {pluralize(matched_files, 'file')} with {total_matches} total {pluralize(total_matches, 'match')} before cancellation."
+                    f"before cancellation. Time: {elapsed_seconds:.2f} seconds."
                 )
             else:
                 final_message = (
                     f"Finished. Scanned {files_scanned} {pluralize(files_scanned, 'file')}. "
                     f"Found {matched_files} matching {pluralize(matched_files, 'file')} with {total_matches} total {pluralize(total_matches, 'match')}."
+                    f"Time: {elapsed_seconds:.2f} seconds."
                 )
 
             self.summary_var.set(final_message)
