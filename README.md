@@ -99,6 +99,8 @@ ARCHIVE_SEARCH_PRIMARY_FOLDER = Path(r"C:\database1")
 ARCHIVE_SEARCH_SECONDARY_FOLDER = Path(r"C:\database2")
 ```
 
+Network note: when Windows resolves a mapped drive such as `S:` to a UNC path like `\\server\share`, the app now opens the SQLite index using a UNC-safe read-only URI so searches do not fail with `invalid URI authority`.
+
 ## Index location and privacy
 
 The index stores extracted searchable content, file metadata, and status information. Treat the SQLite index as sensitive if the source documents are sensitive.
