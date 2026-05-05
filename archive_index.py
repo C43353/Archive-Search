@@ -14,7 +14,7 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Callable, Dict, Iterator, List, Optional, Sequence, Tuple
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from archive_config import (
     DETAIL_PREVIEW_LENGTH,
@@ -450,18 +450,57 @@ class SQLiteIndexManager:
         connection.execute("PRAGMA synchronous=NORMAL")
         return connection
 
+    @staticmethod
+    def _normalise_windows_path_for_sqlite_uri(path_text: str) -> str:
+        r"""Return a Windows path string that SQLite can safely receive in a file URI.
+
+        pathlib may resolve mapped drives such as S: to a UNC path. A normal
+        pathlib URI for that UNC path would look like file://server/share/file,
+        but the SQLite library bundled with Python rejects non-local URI
+        authorities unless it was compiled with SQLITE_ALLOW_URI_AUTHORITY.
+
+        For UNC paths, keep the server/share inside the URI path instead and
+        use the allowed localhost authority, for example:
+            \\server\share\db.sqlite3 -> file://localhost//server/share/db.sqlite3
+        """
+        if path_text.startswith("\\\\?\\UNC\\"):
+            return r"\\" + path_text[8:]
+        if path_text.startswith("\\\\?\\"):
+            return path_text[4:]
+        return path_text
+
+    @classmethod
+    def _sqlite_readonly_uri(cls, database_path: Path) -> str:
+        """Build a SQLite read-only URI that also works for mapped/UNC drives."""
+        resolved = database_path.expanduser().resolve(strict=False)
+        path_text = cls._normalise_windows_path_for_sqlite_uri(str(resolved))
+
+        # UNC paths start with two slashes/backslashes. Do not use Path.as_uri()
+        # here because it creates file://server/share/... and SQLite rejects the
+        # server name as an invalid URI authority.
+        if path_text.startswith((r"\\", "//")):
+            unc_path = path_text.replace("\\", "/")
+            if not unc_path.startswith("//"):
+                unc_path = "//" + unc_path.lstrip("/")
+            encoded_path = quote(unc_path, safe="/:")
+            return f"file://localhost{encoded_path}?{urlencode({'mode': 'ro'})}"
+
+        try:
+            uri = resolved.as_uri()
+        except ValueError:
+            uri_path = quote(resolved.as_posix(), safe="/:")
+            uri = f"file:{uri_path}"
+        separator = "&" if "?" in uri else "?"
+        return f"{uri}{separator}{urlencode({'mode': 'ro'})}"
+
     def _connect_readonly(self, database_path: Path) -> sqlite3.Connection:
         """Open an existing database without creating or changing files.
 
         This is used for normal searches and status checks so many users can search
         at once without needing write permission or creating SQLite sidecar files.
         """
-        try:
-            uri = database_path.resolve(strict=False).as_uri()
-        except ValueError:
-            uri_path = quote(database_path.resolve(strict=False).as_posix(), safe="/:")
-            uri = f"file:{uri_path}"
-        connection = sqlite3.connect(f"{uri}?mode=ro", uri=True, timeout=30.0)
+        readonly_uri = self._sqlite_readonly_uri(database_path)
+        connection = sqlite3.connect(readonly_uri, uri=True, timeout=30.0)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA busy_timeout=30000")
         return connection
