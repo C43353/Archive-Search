@@ -113,6 +113,11 @@ class SQLiteIndexManager:
         return clause, params
 
     @staticmethod
+    def _should_run_substring_supplement(search_terms: Sequence[str]) -> bool:
+        """Use LIKE alongside FTS for numeric/code searches such as 253 -> A9253."""
+        return any(any(character.isdigit() for character in term) for term in search_terms if term.strip())
+
+    @staticmethod
     def _root_fingerprint(root_path: Path) -> str:
         """Return a stable non-reversible ID for a root folder path."""
         try:
@@ -237,8 +242,8 @@ class SQLiteIndexManager:
         except FileExistsError as exc:
             details = self._read_lock_details(lock_path)
             raise ArchiveIndexLockedError(
-                "Another person or computer may already be updating this archive. "
-                "You can still search the last completed index, but only one person can update it at a time.\n\n"
+                "Another person or computer may already be editing or updating this archive index. "
+                "Update index cannot run until they finish. You can still search the last completed index, but only one person can update it at a time.\n\n"
                 "If you are sure nobody else is updating this folder, close Archive Search on other computers and delete the marker file shown below, then try again.\n\n"
                 f"Folder: {root.path}\n"
                 f"Marker file: {lock_path}\n\n"
@@ -545,9 +550,6 @@ class SQLiteIndexManager:
             )
         return tuple(requirements)
 
-    def get_roots_without_usable_index(self, roots: Sequence[SearchRoot]) -> Tuple[SearchRoot, ...]:
-        """Return selected folders that do not yet have a usable saved index."""
-        return tuple(item["root"] for item in self.get_index_build_requirements(roots))
 
     def _close_connection_quietly(self, conn: sqlite3.Connection) -> None:
         """Close a SQLite connection without hiding the real work error."""
@@ -1340,6 +1342,7 @@ class SQLiteIndexManager:
         match_sql = f"""
             SELECT
                 files.id AS file_id,
+                chunk_index.rowid AS chunk_rowid,
                 files.path,
                 files.root_path,
                 files.file_type,
@@ -1350,6 +1353,7 @@ class SQLiteIndexManager:
                 chunk_index.page_number,
                 chunk_index.location_sort_key,
                 snippet(chunk_index, 7, '', '', ' ... ', 18) AS preview,
+                chunk_index.content AS full_content,
                 bm25(chunk_index) AS score
             FROM chunk_index
             JOIN files ON files.id = CAST(chunk_index.file_id AS INTEGER)
@@ -1359,12 +1363,13 @@ class SQLiteIndexManager:
         """
 
         grouped: Dict[int, Dict[str, object]] = {}
+        seen_chunk_rowids: set[int] = set()
         total_matches = 0
 
         try:
             conn = self._connect_readonly(database_path)
         except sqlite3.Error:
-            status_callback(f"The {root.label.lower()} folder has no usable index yet. Please click Update Index when you are ready to create it.")
+            status_callback(f"The {root.label.lower()} folder has no usable index yet. Click Archive settings, then click Update index when you are ready to create it.")
             return [], 0
 
         try:
@@ -1373,6 +1378,10 @@ class SQLiteIndexManager:
             for index, row in enumerate(rows, start=1):
                 if cancel_event.is_set():
                     break
+                chunk_rowid = int(row["chunk_rowid"])
+                if chunk_rowid in seen_chunk_rowids:
+                    continue
+                seen_chunk_rowids.add(chunk_rowid)
                 file_id = int(row["file_id"])
                 total_matches += 1
                 info = grouped.get(file_id)
@@ -1394,7 +1403,13 @@ class SQLiteIndexManager:
                 if info["first_location_label"] is None:
                     info["first_location_label"] = str(row["location_label"] or "")
                 if snippets_per_file is None or len(info["snippets"]) < snippets_per_file:
-                    preview = truncate_text(str(row["preview"] or ""), DETAIL_PREVIEW_LENGTH)
+                    # Workbook rows need to be shown in full in the details pane so users can
+                    # horizontally scroll across every column. Text/PDF/Word results keep the
+                    # shorter FTS snippet preview for readability.
+                    if str(info["file_type"]) == "excel":
+                        preview = str(row["full_content"] or "")
+                    else:
+                        preview = truncate_text(str(row["preview"] or ""), DETAIL_PREVIEW_LENGTH)
                     info["snippets"].append(MatchSnippet(location_label=str(row["location_label"] or "Match"), preview=preview))
                 if info["file_type"] == "excel" and info["open_sheet"] is None:
                     info["open_sheet"] = row["sheet_name"]
@@ -1404,58 +1419,69 @@ class SQLiteIndexManager:
                         f"Searching the saved index in the {root.label.lower()} folder... checked {index} {pluralize(index, 'match')}"
                     )
 
-            if not grouped:
-                like_clause, like_params = self._build_like_conditions(search_terms=search_terms, match_mode=match_mode)
-                if like_clause:
-                    fallback_sql = f"""
-                        SELECT
-                            files.id AS file_id,
-                            files.path,
-                            files.root_path,
-                            files.file_type,
-                                        chunk_index.location_label,
-                            chunk_index.sheet_name,
-                            chunk_index.row_number,
-                            chunk_index.line_number,
-                            chunk_index.page_number,
-                            chunk_index.location_sort_key,
-                            chunk_index.content AS preview
-                        FROM chunk_index
-                        JOIN files ON files.id = CAST(chunk_index.file_id AS INTEGER)
-                        WHERE files.suffix IN ({','.join('?' for _ in allowed)}){scope_sql}
-                          AND ({like_clause})
-                        ORDER BY files.path, CAST(COALESCE(chunk_index.location_sort_key, '0') AS INTEGER), chunk_index.location_label
-                    """
-                    rows = conn.execute(fallback_sql, (*allowed, *scope_params, *like_params))
-                    for row in rows:
-                        if cancel_event.is_set():
-                            break
-                        file_id = int(row["file_id"])
-                        total_matches += 1
-                        info = grouped.get(file_id)
-                        if info is None:
-                            info = {
-                                "file_type": str(row["file_type"]),
-                                "path": str(row["path"]),
-                                "root_label": root.label,
-                                "root_path": str(row["root_path"] or root.path),
-                                "match_count": 0,
-                                "best_score": 0.0,
-                                "snippets": [],
-                                "open_sheet": None,
-                                "open_row_number": None,
-                                "first_location_label": None,
-                                    }
-                            grouped[file_id] = info
-                        info["match_count"] = int(info["match_count"]) + 1
-                        if info["first_location_label"] is None:
-                            info["first_location_label"] = str(row["location_label"] or "")
-                        if snippets_per_file is None or len(info["snippets"]) < snippets_per_file:
+            like_clause, like_params = self._build_like_conditions(search_terms=search_terms, match_mode=match_mode)
+            if like_clause and (not grouped or self._should_run_substring_supplement(search_terms)):
+                # FTS token-prefix matching does not find numeric substrings inside
+                # product/order codes. For example, an FTS query for 253 will not
+                # match the token A9253, so numeric/code searches get a LIKE pass
+                # in addition to FTS. Duplicates are removed by chunk rowid.
+                fallback_sql = f"""
+                    SELECT
+                        files.id AS file_id,
+                        chunk_index.rowid AS chunk_rowid,
+                        files.path,
+                        files.root_path,
+                        files.file_type,
+                        chunk_index.location_label,
+                        chunk_index.sheet_name,
+                        chunk_index.row_number,
+                        chunk_index.line_number,
+                        chunk_index.page_number,
+                        chunk_index.location_sort_key,
+                        chunk_index.content AS preview
+                    FROM chunk_index
+                    JOIN files ON files.id = CAST(chunk_index.file_id AS INTEGER)
+                    WHERE files.suffix IN ({','.join('?' for _ in allowed)}){scope_sql}
+                      AND ({like_clause})
+                    ORDER BY files.path, CAST(COALESCE(chunk_index.location_sort_key, '0') AS INTEGER), chunk_index.location_label
+                """
+                rows = conn.execute(fallback_sql, (*allowed, *scope_params, *like_params))
+                for row in rows:
+                    if cancel_event.is_set():
+                        break
+                    chunk_rowid = int(row["chunk_rowid"])
+                    if chunk_rowid in seen_chunk_rowids:
+                        continue
+                    seen_chunk_rowids.add(chunk_rowid)
+                    file_id = int(row["file_id"])
+                    total_matches += 1
+                    info = grouped.get(file_id)
+                    if info is None:
+                        info = {
+                            "file_type": str(row["file_type"]),
+                            "path": str(row["path"]),
+                            "root_label": root.label,
+                            "root_path": str(row["root_path"] or root.path),
+                            "match_count": 0,
+                            "best_score": 0.0,
+                            "snippets": [],
+                            "open_sheet": None,
+                            "open_row_number": None,
+                            "first_location_label": None,
+                        }
+                        grouped[file_id] = info
+                    info["match_count"] = int(info["match_count"]) + 1
+                    if info["first_location_label"] is None:
+                        info["first_location_label"] = str(row["location_label"] or "")
+                    if snippets_per_file is None or len(info["snippets"]) < snippets_per_file:
+                        if str(info["file_type"]) == "excel":
+                            preview = str(row["preview"] or "")
+                        else:
                             preview = truncate_text(str(row["preview"] or ""), DETAIL_PREVIEW_LENGTH)
-                            info["snippets"].append(MatchSnippet(location_label=str(row["location_label"] or "Match"), preview=preview))
-                        if info["file_type"] == "excel" and info["open_sheet"] is None:
-                            info["open_sheet"] = row["sheet_name"]
-                            info["open_row_number"] = int(row["row_number"]) if row["row_number"] not in {None, ""} else None
+                        info["snippets"].append(MatchSnippet(location_label=str(row["location_label"] or "Match"), preview=preview))
+                    if info["file_type"] == "excel" and info["open_sheet"] is None:
+                        info["open_sheet"] = row["sheet_name"]
+                        info["open_row_number"] = int(row["row_number"]) if row["row_number"] not in {None, ""} else None
 
         finally:
             self._close_connection_quietly(conn)

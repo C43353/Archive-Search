@@ -1,0 +1,37 @@
+# Python bytecode and local virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# Build/test/tooling artefacts
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# Archive Search index databases and sidecar files
+*.sqlite3
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm
+.archive_search_v11.sqlite3
+
+# Local-only settings/secrets
+.env
+*.env
+*.local
+archive_search_local_config.py
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.sqlite3.lock
+*.sqlite3.tmp
+*.sqlite3.bak

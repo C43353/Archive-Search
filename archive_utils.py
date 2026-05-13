@@ -23,17 +23,6 @@ def compact_whitespace(value) -> str:
     return " ".join(str(value).split())
 
 
-def normalize_text(value) -> str:
-    """Convert incoming values into a lower-case search-friendly representation."""
-    if value is None:
-        return ""
-    if isinstance(value, dt.datetime):
-        return value.strftime("%d/%m/%Y").lower()
-    if isinstance(value, dt.date):
-        return value.strftime("%d/%m/%Y").lower()
-    if isinstance(value, dt.time):
-        return value.strftime("%H:%M").lower()
-    return compact_whitespace(value).lower()
 
 
 def display_text(value) -> str:
@@ -72,7 +61,15 @@ def build_highlight_terms(search_terms: Sequence[str]) -> List[str]:
 
 def pluralize(count: int, singular: str, plural: Optional[str] = None) -> str:
     """Return a singular or plural label that matches the supplied count."""
-    return singular if count == 1 else (plural or singular + "s")
+    if count == 1:
+        return singular
+    if plural:
+        return plural
+    if singular.endswith(("s", "x", "z", "ch", "sh")):
+        return singular + "es"
+    if len(singular) > 1 and singular.endswith("y") and singular[-2].lower() not in "aeiou":
+        return singular[:-1] + "ies"
+    return singular + "s"
 
 
 def should_ignore_filename(filename: str) -> bool:

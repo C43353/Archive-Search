@@ -154,8 +154,13 @@ class DocumentExtractor:
     @staticmethod
     def build_row_text(row_values: Sequence[object]) -> Optional[str]:
         display_cells = [display_text(value) for value in row_values]
-        row_text = " | ".join(cell for cell in display_cells if cell).strip(" |")
-        return row_text or None
+        while display_cells and not display_cells[-1]:
+            display_cells.pop()
+        if not any(display_cells):
+            return None
+        # Preserve leading and internal blank cells so future indexes keep the
+        # worksheet column positions needed for clearer result display.
+        return " | ".join(display_cells)
 
     @staticmethod
     def _clean_lines(text: str) -> List[str]:

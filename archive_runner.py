@@ -33,6 +33,43 @@ class SearchRunner:
             self.queue.put(("items", items.copy()))
             items.clear()
 
+    def _finish(
+        self,
+        started_at: float,
+        *,
+        files_scanned: int = 0,
+        indexed_files: int = 0,
+        matched_files: int = 0,
+        total_matches: int = 0,
+        cancelled: bool = False,
+        mode: str = "search",
+        **extra: object,
+    ) -> None:
+        """Publish a finished payload with the standard result fields."""
+        payload: Dict[str, object] = {
+            "files_scanned": files_scanned,
+            "indexed_files": indexed_files,
+            "matched_files": matched_files,
+            "total_matches": total_matches,
+            "cancelled": cancelled,
+            "elapsed_seconds": time.perf_counter() - started_at,
+            "mode": mode,
+        }
+        payload.update(extra)
+        self.queue.put(("finished", payload))
+
+    @staticmethod
+    def _empty_refresh_stats() -> Dict[str, object]:
+        """Return index-refresh counters used when a normal search does not update the index."""
+        return {
+            "files_seen": 0,
+            "files_reused": 0,
+            "files_refreshed": 0,
+            "files_deleted": 0,
+            "files_failed": 0,
+            "first_error": "",
+        }
+
     def run(
         self,
         roots: Sequence[SearchRoot],
@@ -53,102 +90,64 @@ class SearchRunner:
                     status_callback=self._status,
                 )
             else:
-                self._status("Searching the last completed index. New or changed files are included after Update Index is run.")
-                refresh_stats = {
-                    "files_seen": 0,
-                    "files_reused": 0,
-                    "files_refreshed": 0,
-                    "files_deleted": 0,
-                    "files_failed": 0,
-                    "first_error": "",
-                }
+                self._status(
+                    "Searching the last completed index. New or changed files are included after you click Archive settings and run Update index."
+                )
+                refresh_stats = self._empty_refresh_stats()
 
             if not update_only and search_terms:
                 build_requirements = self.index_manager.get_index_build_requirements(roots)
                 if build_requirements:
                     root_names = ", ".join(str(item["root"].label) for item in build_requirements)
                     self._status(
-                        "The saved index is missing or is not a valid Archive Search index. Click Update Index first, then search again."
+                        "The saved index is missing or is not a valid Archive Search index. Click Archive settings, then click Update index first, then search again."
                     )
-                    self.queue.put(
-                        (
-                            "finished",
-                            {
-                                "files_scanned": 0,
-                                "indexed_files": 0,
-                                "matched_files": 0,
-                                "total_matches": 0,
-                                "cancelled": False,
-                                "elapsed_seconds": time.perf_counter() - started_at,
-                                "mode": "initial_index_required",
-                                "files_reused": 0,
-                                "files_refreshed": 0,
-                                "files_deleted": 0,
-                                "missing_roots": root_names,
-                            },
-                        )
+                    self._finish(
+                        started_at,
+                        mode="initial_index_required",
+                        files_reused=0,
+                        files_refreshed=0,
+                        files_deleted=0,
+                        missing_roots=root_names,
                     )
                     return
 
             indexed_files = self.index_manager.count_indexed_files(roots, allowed_extensions)
             if self.cancel_event.is_set():
-                self.queue.put(
-                    (
-                        "finished",
-                        {
-                            "files_scanned": refresh_stats["files_seen"],
-                            "indexed_files": indexed_files,
-                            "matched_files": 0,
-                            "total_matches": 0,
-                            "cancelled": True,
-                            "elapsed_seconds": time.perf_counter() - started_at,
-                            "mode": "update" if update_only else "search",
-                        },
-                    )
+                self._finish(
+                    started_at,
+                    files_scanned=int(refresh_stats["files_seen"]),
+                    indexed_files=indexed_files,
+                    cancelled=True,
+                    mode="update" if update_only else "search",
                 )
                 return
 
             if update_only:
-                self.queue.put(
-                    (
-                        "finished",
-                        {
-                            "files_scanned": refresh_stats["files_seen"],
-                            "indexed_files": indexed_files,
-                            "matched_files": 0,
-                            "total_matches": 0,
-                            "cancelled": False,
-                            "elapsed_seconds": time.perf_counter() - started_at,
-                            "mode": "update",
-                            "files_reused": refresh_stats["files_reused"],
-                            "files_refreshed": refresh_stats["files_refreshed"],
-                            "files_deleted": refresh_stats["files_deleted"],
-                            "files_failed": refresh_stats.get("files_failed", 0),
-                            "first_error": refresh_stats.get("first_error", ""),
-                        },
-                    )
+                self._finish(
+                    started_at,
+                    files_scanned=int(refresh_stats["files_seen"]),
+                    indexed_files=indexed_files,
+                    mode="update",
+                    files_reused=refresh_stats["files_reused"],
+                    files_refreshed=refresh_stats["files_refreshed"],
+                    files_deleted=refresh_stats["files_deleted"],
+                    files_failed=refresh_stats.get("files_failed", 0),
+                    first_error=refresh_stats.get("first_error", ""),
                 )
                 return
 
             if not search_terms:
-                self.queue.put(
-                    (
-                        "finished",
-                        {
-                            "files_scanned": refresh_stats["files_seen"],
-                            "indexed_files": indexed_files,
-                            "matched_files": 0,
-                            "total_matches": 0,
-                            "cancelled": False,
-                            "elapsed_seconds": time.perf_counter() - started_at,
-                            "mode": "search",
-                            "files_reused": refresh_stats["files_reused"],
-                            "files_refreshed": refresh_stats["files_refreshed"],
-                            "files_deleted": refresh_stats["files_deleted"],
-                            "files_failed": refresh_stats.get("files_failed", 0),
-                            "first_error": refresh_stats.get("first_error", ""),
-                        },
-                    )
+                self._finish(
+                    started_at,
+                    files_scanned=int(refresh_stats["files_seen"]),
+                    indexed_files=indexed_files,
+                    mode="search",
+                    files_reused=refresh_stats["files_reused"],
+                    files_refreshed=refresh_stats["files_refreshed"],
+                    files_deleted=refresh_stats["files_deleted"],
+                    files_failed=refresh_stats.get("files_failed", 0),
+                    first_error=refresh_stats.get("first_error", ""),
                 )
                 return
 
@@ -170,38 +169,24 @@ class SearchRunner:
                     self._emit_items(item_buffer)
             self._emit_items(item_buffer)
 
-            self.queue.put(
-                (
-                    "finished",
-                    {
-                        "files_scanned": refresh_stats["files_seen"],
-                        "indexed_files": indexed_files,
-                        "matched_files": len(results),
-                        "total_matches": total_matches,
-                        "cancelled": self.cancel_event.is_set(),
-                        "elapsed_seconds": time.perf_counter() - started_at,
-                        "mode": "search",
-                        "files_reused": refresh_stats["files_reused"],
-                        "files_refreshed": refresh_stats["files_refreshed"],
-                        "files_deleted": refresh_stats["files_deleted"],
-                    },
-                )
+            self._finish(
+                started_at,
+                files_scanned=int(refresh_stats["files_seen"]),
+                indexed_files=indexed_files,
+                matched_files=len(results),
+                total_matches=total_matches,
+                cancelled=self.cancel_event.is_set(),
+                mode="search",
+                files_reused=refresh_stats["files_reused"],
+                files_refreshed=refresh_stats["files_refreshed"],
+                files_deleted=refresh_stats["files_deleted"],
             )
         except Exception as exc:
             if self.cancel_event.is_set():
-                self.queue.put(
-                    (
-                        "finished",
-                        {
-                            "files_scanned": 0,
-                            "indexed_files": 0,
-                            "matched_files": 0,
-                            "total_matches": 0,
-                            "cancelled": True,
-                            "elapsed_seconds": time.perf_counter() - started_at,
-                            "mode": "update" if update_only else "search",
-                        },
-                    )
+                self._finish(
+                    started_at,
+                    cancelled=True,
+                    mode="update" if update_only else "search",
                 )
             else:
                 self.queue.put(("fatal", str(exc)))

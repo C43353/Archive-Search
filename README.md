@@ -1,56 +1,62 @@
-# Archive Search V11
+# Archive Search
 
-Archive Search V11 is a Windows-friendly Tkinter desktop search tool for archived documents. It builds a SQLite full-text index so repeat searches are much faster after the first index build.
+Archive Search is a desktop search tool for archived sales and technical documents.
 
-**Disclaimer:** This code was developed with AI assistance. Review it, test it on dummy data first, and do not use it on the only copy of important business records. (I didn't intend to use AI as much as I have, but it has done a better/faster job than I could have done in the timeframe)
+The application builds a per-folder SQLite full-text index from supported archive files. Normal searches read the last completed index instead of opening every document again, so repeat searches are fast and multiple users can search a shared archive at the same time.
+
+> **Important:** This project was developed with AI assistance. Review it, test it on dummy or copied data first, and do not rely on it as the only way to access important business records. (I didn't intend to use AI as much as I have, but it has done a better/faster job than I could have done in the timeframe)
+
+## What it looks like
+
+The screenshots below use sample files and the default `Company Name` branding. Your archive folders, company name, logo and icon can be configured locally.
 
 ## What the application does
 
-The program searches one or two configured root folders for supported files. It extracts searchable text using read-only workflows where supported, stores the extracted text in a SQLite database, then searches that database.
+Archive Search lets a user:
 
-Supported file types:
+1. Choose a primary archive folder, a secondary archive folder, or both.
+2. Decide whether each archive should include subfolders.
+3. Choose whether to search workbooks, text documents, or both.
+4. Click **Archive settings** > **Update index** to build or refresh the saved index.
+5. Search from the main screen using any-word or all-words matching.
+6. Select a result to review the matching evidence before opening the source file.
+7. Open a selected result, show it in the file manager, or copy its full path.
 
-- Excel workbooks: `.xlsx`, `.xlsm`, `.xltx`, `.xltm`, `.xls`, `.xlsb`
-- Word documents: `.docx`, `.docm`, `.dotx`, `.dotm`, `.doc`
-- PDF documents: `.pdf`
-- Plain text files: `.txt`
+Searches use the last completed SQLite index. New, edited, or deleted source files are included after **Update index** is run again. The main **Check index** button compares the selected folders against the saved index and reports whether the index appears out of date without changing anything.
+
+## Supported file types
+
+| Category | Extensions | Notes |
+| --- | --- | --- |
+| Excel workbooks | `.xlsx`, `.xlsm`, `.xltx`, `.xltm`, `.xls`, `.xlsb` | `.xlsx`/`.xlsm` are read through OpenPyXL; `.xls` uses xlrd; `.xlsb` uses pyxlsb. |
+| Word documents | `.docx`, `.docm`, `.dotx`, `.dotm`, `.doc` | Modern Word files use python-docx when available. Legacy `.doc` requires Microsoft Word and pywin32. |
+| PDFs | `.pdf` | Only embedded/selectable text is indexed. Scanned image-only PDFs need OCR outside this app first. |
+| Plain text | `.txt` | Several common encodings are attempted. |
 
 ## Key features
 
-- Search across one or two folder roots
-- Optional recursive subfolder searching per root
-- Search mode for **any word** or **all words**
-- Quoted phrase support, for example `"Sigma 5E"`
-- SQLite full-text search using one database per selected root folder
-- Manual **Update Index** option that adds new/changed files and removes deleted files without starting over
-- **Check Index Status** option to detect new, changed, deleted, or not-yet-indexed files
-- Grouped result list with a details pane
-- Result details show the folder path and highlighted search terms; text documents show their full indexed text
-- Buttons for **Open Selected** and **Copy Path**
-- Read-only extraction workflow where supported
-- Background worker thread for search and update jobs so the UI stays responsive
-
-## Main files
-
-| File | Purpose |
-| --- | --- |
-| `main.py` | Launch entry point |
-| `archive_app.py` | Tkinter desktop UI |
-| `archive_runner.py` | Background indexing/search worker |
-| `archive_index.py` | SQLite/FTS index management |
-| `archive_extractor.py` | Read-only extraction for Excel, Word, PDF, and TXT files |
-| `archive_opener.py` | Safer result-opening helpers |
-| `archive_file_safety.py` | Low-level file access and signature checks |
-| `archive_config.py` | File types, default folder paths, and UI constants |
-| `archive_optional.py` | Optional third-party and Windows integration imports |
-| `archive_models.py` | Shared dataclasses |
-| `archive_utils.py` | Shared formatting and helper functions |
-| `requirements.txt` | Python package dependencies |
+- SQLite FTS5 indexing, with one index database stored in each selected archive folder.
+- Any-word and all-words search modes.
+- Quoted phrase support, for example `"Sigma 5E"`.
+- Numeric/code substring fallback so a search such as `253` can still find a code such as `A9253`.
+- Read-only search mode: normal searches open the existing index without writing to it.
+- Incremental **Update index** workflow that adds new/changed files and removes deleted files from the index.
+- **Check index** workflow that reports new, changed, deleted, missing-index, or invalid-index conditions without updating the index.
+- File signature checks before indexing, so mismatched extensions such as a renamed file are flagged before an index update continues.
+- Grouped result list with **File**, **Type**, and **Matches** columns.
+- Details pane showing matching workbook rows or indexed document text with highlighted search terms.
+- Workbook result details grouped by worksheet, with workbook headings shown where available.
+- Double-click a workbook result to open it read-only at the first matching sheet/row when Microsoft Excel integration is available.
+- Buttons and right-click actions for **Open selected**, **Show in folder**, and **Copy path**.
+- Background worker thread for search and update jobs, keeping the Tkinter interface responsive.
+- Optional local logo, app icon, and system-tray icon support.
 
 ## Requirements
 
-- Python 3.10+ recommended
-- Windows recommended for the best Microsoft Office integration
+- Python 3.10 or newer is recommended.
+- Windows is recommended for the best Microsoft Office integration.
+- Microsoft Excel is needed only for the optional “open workbook at matching row” integration.
+- Microsoft Word plus pywin32 is needed for legacy `.doc` extraction and read-only Word opening.
 
 Install dependencies from the project folder:
 
@@ -58,98 +64,152 @@ Install dependencies from the project folder:
 pip install -r requirements.txt
 ```
 
-Optional Windows note: `pywin32` is included in `requirements.txt` using a Windows-only environment marker, so non-Windows systems should ignore it automatically.
-
-## Optional external software
-
-Some features depend on software installed on the machine:
-
-- **Microsoft Word + pywin32**: needed for legacy `.doc` extraction and read-only Word opening
-- **Microsoft Excel + pywin32**: used to open Excel results directly to the matching sheet/row in read-only mode
-- Without those integrations, the app falls back to safer generic opening behaviour where possible
+`pywin32` is listed with a Windows-only environment marker, so non-Windows systems should ignore it automatically. `Pillow` improves logo/icon scaling. `pystray` enables the optional system-tray icon when an app icon is configured.
 
 ## Running the program
 
-Run the app from the project folder:
+From the project folder:
 
 ```bash
 python main.py
 ```
 
-## Default folders
+The application starts with safe generic defaults:
 
-The public code uses generic default folders:
+- Primary folder: `C:\Primary Folder`
+- Secondary folder: `C:\Secondary Folder`
+- Company name: `Company Name`
+- No logo or app icon
 
-- `C:\Primary Folder`
-- `C:\Secondary Folder`
+You can change the folders in the UI each time you run the program. For permanent local defaults, create a local config file as described below.
 
-You can change the folders in the UI at runtime.
+## Local configuration
 
-To make the app open with different default folders already filled in, edit these lines near the top of `archive_config.py`:
+Company-specific paths and branding should not be hard-coded into the shared application files. Instead, copy the template file:
 
-```python
-ARCHIVE_SEARCH_PRIMARY_FOLDER = Path(r"C:\Primary Folder")
-ARCHIVE_SEARCH_SECONDARY_FOLDER = Path(r"C:\Secondary Folder")
+```bash
+copy archive_search_local_config.example.py archive_search_local_config.py
 ```
 
-For example:
+On PowerShell or macOS/Linux shells, use the normal copy command for that environment, for example:
 
-```python
-ARCHIVE_SEARCH_PRIMARY_FOLDER = Path(r"C:\database1")
-ARCHIVE_SEARCH_SECONDARY_FOLDER = Path(r"C:\database2")
+```bash
+cp archive_search_local_config.example.py archive_search_local_config.py
 ```
 
-Network note: when Windows resolves a mapped drive such as `S:` to a UNC path like `\\server\share`, the app now opens the SQLite index using a UNC-safe read-only URI so searches do not fail with `invalid URI authority`.
+Then edit `archive_search_local_config.py` on that computer. The file is ignored by git through `.gitignore`.
+
+Example:
+
+```python
+from pathlib import Path
+
+LOCAL_COMPANY_NAME = "Company Name"
+
+# Optional: show a logo in the header. Relative paths are resolved from this project folder.
+LOCAL_COMPANY_LOGO_PATH = None
+# LOCAL_COMPANY_LOGO_PATH = Path(r"C:\Path\To\logo.png")
+
+LOCAL_HEADER_LOGO_MAX_WIDTH = 360
+LOCAL_HEADER_LOGO_MAX_HEIGHT = 74
+
+# Optional: title-bar/taskbar icon, and tray icon when pystray is installed.
+LOCAL_APP_ICON_PATH = None
+# LOCAL_APP_ICON_PATH = Path(r"C:\Path\To\icon.ico")
+
+LOCAL_SEARCH_PRIMARY_FOLDER = Path(r"C:\Primary Folder")
+LOCAL_SEARCH_SECONDARY_FOLDER = Path(r"C:\Secondary Folder")
+```
+
+Relative logo/icon paths are resolved from the application folder. Transparent PNG logos work well because the header has a white backing surface. `.ico` files are best for Windows title-bar/taskbar icons.
+
+## Typical user workflow
+
+### First-time setup
+
+1. Start the app with `python main.py`.
+2. Click **Archive settings**.
+3. Enable the archive folder or folders you want to search.
+4. Browse to the correct primary and/or secondary folder.
+5. Tick **Subfolders** for each folder when nested archive folders should be included.
+6. Choose **Workbooks**, **Text documents**, or both.
+7. Click **Update index** and wait for it to finish.
+8. Enter a search term and click **Search archive**.
+
+The first index build may take a while on a large archive. Later updates are incremental and should usually be faster.
+
+### Day-to-day searching
+
+1. Type a table model, customer, order number, machine name, or phrase.
+2. Use **Any word** when any term can match.
+3. Use **All words** when every term must be present.
+4. Use quotes for an exact phrase, for example `"Sigma 5E"`.
+5. Select a result to review the matching evidence in the details pane.
+6. Double-click the result, or click **Open selected**, to open the source document.
+
+### Keeping the index current
+
+- Click **Check index** when results look out of date.
+- Click **Archive settings** > **Update index** after archive files are added, edited, moved, renamed, or deleted.
+- Only one person or computer should run **Update index** for the same archive folder at the same time.
+- Other users can continue to search the last completed index while an update is being prepared.
 
 ## Index location and privacy
 
-The index stores extracted searchable content, file metadata, and status information. Treat the SQLite index as sensitive if the source documents are sensitive.
-
 Each selected archive folder stores its own SQLite database directly in that folder. For example:
 
-- Primary folder `C:\Primary Folder` -> `C:\Primary Folder\.archive_search_{path code}.sqlite3`
-- Secondary folder `C:\Secondary Folder` -> `C:\Secondary Folder\.archive_search_{path code}.sqlite3`
+```text
+C:\Primary Folder\.archive_search_{path-code}.sqlite3
+C:\Secondary Folder\.archive_search_{path-code}.sqlite3
+```
 
-The `{path code}` is a stable 16-character hash of the canonical folder path. This keeps separate folders from accidentally sharing the same database while avoiding the need to store the full path in the filename.
+`{path-code}` is a stable 16-character hash of the canonical folder path. The index is tied to the folder path, not to the Primary/Secondary UI slot. If the same folder is entered in both slots, Archive Search deduplicates it and searches it once.
 
-Because the index contains extracted text from the source documents, make sure the archive folder permissions are appropriate for everyone who can see that folder.
+The index contains extracted searchable text, file metadata, and status information. Treat `.archive_search_*.sqlite3` as sensitive if the source documents are sensitive. Users who only search need read access to the folder and index file. Users who run **Update index** need create/read/write/delete access in the archive folder so the app can create its `.lock`, `.tmp`, and `.bak` safety files.
 
-### Multiple users and shared folders
+## Multi-user and shared-folder behaviour
 
-Normal searches open the saved index in read-only mode. This means several people can search the same archive folder at the same time without changing the index file. If a folder has not been indexed yet, Search will not run; the app will ask the user to click **Update Index** first.
+Normal searches open the saved index in read-only mode. This allows several people to search the same shared archive folder without changing the index and without creating SQLite sidecar files.
 
-Only **Update Index** changes the saved index from the UI. It checks for new, changed, and deleted files and updates only those parts of the index. If a selected folder does not already have a saved index, **Update Index** warns the user and then builds that folder index first, which may take a while. If a file already exists at the expected index path but is not a valid Archive Search index, the app warns that the file will be overwritten with a fresh index build.
+**Update index** uses a simple `.lock` marker beside the index so only one update can run for the same folder at once. The update is prepared in a temporary file first, the previous index is kept available during preparation, and a `.bak` backup is used when replacing the live index. If replacement fails, the previous index is kept.
 
-When an update starts, the program creates a small `.lock` marker file in the archive folder so only one person or computer can change that folder index at a time. If another person tries to update the same folder at the same time, they will see a message explaining that an update is already running. Other users can still search the last completed index. If the app finds an old marker left behind by a failed first-time setup, it clears it automatically and carries on.
-
-Updates are prepared in a temporary file first. The old index remains available while the new or updated one is being prepared. The program checks the prepared index before using it, keeps a `.bak` backup of the previous index, and only swaps the prepared index into place after it has finished successfully. If anything goes wrong, the previous index is kept.
-
-Users who only search need read permission for the archive folder and the `.archive_search_*.sqlite3` file. Users who run **Update Index** need create/read/write/delete permission in the archive folder so the program can create its `.lock`, `.tmp`, and `.bak` safety files.
-
-The app does not automatically run index-status checks in the background. Use **Check Index Status** when you want to compare the saved index against the current folder contents before deciding whether to update.
-
-### Why not use a disposable cache folder?
-
-The SQLite files contain a performance index with extracted searchable text. They can be rebuilt, but rebuilding may take time, so they are treated as durable archive-folder data rather than temporary cache.
-
-When **Search subfolders** is unticked, the program keeps previously indexed subfolder data in the SQLite database. Those entries are ignored for searching, status checks, and top-level refreshes until **Search subfolders** is turned back on.
+When Windows resolves a mapped drive such as `S:` to a UNC path like `\\server\share`, the app builds a UNC-safe read-only SQLite URI so normal searches can still open the saved index.
 
 ## Safety notes
 
-The program is designed to avoid modifying source documents:
+Archive Search is designed to avoid modifying source documents:
 
-- Source files are opened using read-only extraction paths **where supported**.
-- Normal searches do not write to the index.
-- Update Index writes only the program's own index and safety files.
-- Legacy Word files are copied to a temporary read-only file before extraction.
-- File signatures are checked before extraction. If a file extension and the actual file contents do not match, **Update Index** stops before generating the index and shows a popup naming the file, folder, full path, expected type, and detected content type so the issue can be fixed.
+- Normal searches do not write to source documents or to the saved index.
+- **Update index** writes only Archive Search index/safety files.
+- Source files are opened through read-only extraction paths where supported.
+- Legacy Word files are copied to a temporary read-only file before text extraction.
+- File signatures are checked before indexing. If the extension and content type do not match, the update stops and reports the file name, folder, full path, expected type, and detected type.
 
-No Python program can promise an absolute guarantee against all third-party software behaviour, but this project deliberately avoids intentional write paths to indexed source documents.
+No desktop search tool can guarantee every third-party library or Office integration will never affect a file, so test on copied data first and keep normal backups of important archives.
 
 ## Notes and limitations
 
-- PDFs are searchable only when they contain embedded text.
+- PDFs are searchable only when they contain embedded/selectable text.
 - `.xlsb` support requires `pyxlsb`.
-- `.doc` support requires Microsoft Word and `pywin32`.
+- `.doc` support requires Microsoft Word and `pywin32` on Windows.
 - The app is primarily intended for Windows, although much of the indexing/search logic is cross-platform.
-- Indexes are keyed by the canonical folder path, not by the Primary/Secondary UI slot. If the same folder is entered as both Primary and Secondary, the app uses one shared index for that folder and searches it once to avoid duplicate results. If the two entries disagree about subfolder inclusion, the broader setting wins.
+- When **Subfolders** is unticked, previously indexed subfolder entries remain in the database but are ignored for searching, status checks, and top-level refreshes until **Subfolders** is ticked again.
+- The result limit is configured in `archive_config.py` as `RESULT_LIMIT`.
+
+## Main project files
+
+| File | Purpose |
+| --- | --- |
+| `main.py` | Launch entry point. |
+| `archive_app.py` | Tkinter desktop UI and result rendering. |
+| `archive_runner.py` | Background search/update worker that communicates with the UI queue. |
+| `archive_index.py` | SQLite/FTS index creation, refresh, validation, status checking, and searching. |
+| `archive_extractor.py` | Read-only text extraction for Excel, Word, PDF, and TXT files. |
+| `archive_file_safety.py` | Low-level file access and file-signature checks. |
+| `archive_opener.py` | Safer helpers for opening results and revealing files. |
+| `archive_config.py` | Generic defaults, file-type sets, index constants, and UI colours. |
+| `archive_search_local_config.example.py` | Template for local-only paths and branding. |
+| `archive_optional.py` | Optional dependency imports for Word/PDF/Windows integration. |
+| `archive_models.py` | Shared dataclasses. |
+| `archive_utils.py` | Shared formatting and helper functions. |
+| `requirements.txt` | Python package dependencies. |
